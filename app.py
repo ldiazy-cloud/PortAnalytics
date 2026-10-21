@@ -16,7 +16,7 @@ st.set_page_config(
 # --------------------------
 @st.cache_data
 def cargar_datos():
-    df = pd.read_csv("data/datos_logisticos_limpios.csv")
+    df = pd.read_csv("datos_logisticos_limpios.csv")    
     df["Hora_Llegada"] = pd.to_datetime(df["Hora_Llegada"], errors="coerce")
     df["Hora_Atraque"] = pd.to_datetime(df["Hora_Atraque"], errors="coerce")
     df["Hora_del_Dia"] = df["Hora_Llegada"].dt.hour
