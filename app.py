@@ -127,11 +127,14 @@ c1, c2, c3, c4 = st.columns(4)
 
 with c1:
     st.metric("Tiempo de Espera Promedio", f"{espera_prom} h", f"Meta: < {UMBRAL_CONTROL} h")
-    st.success("✅ Dentro del estándar") if espera_prom <= UMBRAL_CONTROL else st.warning("⚠️ Fuera de rango")
+    if espera_prom <= UMBRAL_CONTROL:
+        st.success("✅ Dentro del estándar")
+    else:
+        st.warning("⚠️ Fuera de rango")
 
 with c2:
     st.metric("Estancia en Muelle", f"{muelle_prom} h")
-    st.caption("Incluye maniobras")
+    st.caption("Incluye maniobras de carga y descarga")
 
 with c3:
     st.metric("TEUs Movilizados", f"{teus_total:,}")
@@ -147,7 +150,7 @@ st.divider()
 st.subheader("⚠️ Seguimiento de Operaciones con Demora")
 
 if cant_demoras > 0:
-    st.warning(f"Se detectaron **{cant_demoras}** operaciones que superaron {UMBRAL_CONTROL} horas.")
+    st.warning(f"Se detectaron **{cant_demoras}** operaciones que superaron {UMBRAL_CONTROL} horas de espera.")
     tabla = df_filtrado[
         df_filtrado["Tiempo_Espera_Horas"] > UMBRAL_CONTROL
     ].sort_values("Tiempo_Espera_Horas", ascending=False)[
@@ -155,7 +158,7 @@ if cant_demoras > 0:
     ]
     st.dataframe(tabla, use_container_width=True, hide_index=True)
 else:
-    st.success("✅ Sin demoras que reportar. Desempeño óptimo.")
+    st.success("✅ Ningún registro supera el umbral establecido. Desempeño dentro de lo esperado.")
 
 st.divider()
 
@@ -171,15 +174,18 @@ if "Tipo_Carga" in df_filtrado.columns and not df_filtrado.empty:
     fig1 = px.bar(
         g1, x="Tipo_Carga", y="Tiempo_Espera_Horas",
         color="Tipo_Carga", color_discrete_map=COLORES_CARGA,
-        labels={"Tiempo_Espera_Horas": "Horas Promedio"}, text_auto=".2f"
+        labels={"Tiempo_Espera_Horas": "Horas Promedio de Espera"},
+        text_auto=".2f"
     )
     fig1.update_layout(showlegend=False)
     st.plotly_chart(fig1, use_container_width=True)
     
     st.markdown("""
-    > **Análisis:** El **granel líquido** registra los mayores tiempos de espera, 
-    > seguido por granel sólido. Constituyen el foco principal de optimización.
+    > **Análisis:** La categoría de **granel líquido** registra los mayores tiempos de espera, 
+    > seguida por granel sólido. Estas constituyen el foco principal de optimización.
     """)
+else:
+    st.info("ℹ️ Datos insuficientes para este análisis.")
 
 st.divider()
 
@@ -194,10 +200,13 @@ if "Tipo_Carga" in df_filtrado.columns and "TEUs_Ocupados" in df_filtrado.column
     fig2 = px.pie(
         g2, values="TEUs_Ocupados", names="Tipo_Carga",
         color="Tipo_Carga", color_discrete_map=COLORES_CARGA,
-        title="Participación por Tipo de Carga", hole=0.3
+        title="Participación Porcentual por Tipo de Carga",
+        hole=0.3
     )
     fig2.update_traces(textposition="inside", textinfo="percent+label")
     st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.info("ℹ️ Datos insuficientes para este análisis.")
 
 st.divider()
 
@@ -207,19 +216,22 @@ st.divider()
 st.subheader("3. Patrón de Llegadas y Horarios Pico")
 
 if "Hora_del_Dia" in df_filtrado.columns and not df_filtrado.empty:
-    g3 = df_filtrado.groupby("Hora_del_Dia").size().reset_index(name="Cantidad")
+    g3 = df_filtrado.groupby("Hora_del_Dia").size().reset_index(name="Cantidad_Buques")
     
     fig3 = px.line(
-        g3, x="Hora_del_Dia", y="Cantidad", markers=True,
-        labels={"Cantidad": "Número de Buques"}, color_discrete_sequence=["#0D9488"]
+        g3, x="Hora_del_Dia", y="Cantidad_Buques", markers=True,
+        labels={"Cantidad_Buques": "Número de Buques", "Hora_del_Dia": "Hora del Día (0-23)"},
+        color_discrete_sequence=["#0D9488"]
     )
     fig3.update_layout(xaxis=dict(tickmode="linear", dtick=2))
     st.plotly_chart(fig3, use_container_width=True)
     
     st.markdown("""
-    > **Análisis:** La mayor afluencia se concentra entre las **18:00 y 21:00**. 
-    > Se recomienda reforzar personal en el turno de tarde/noche.
+    > **Análisis:** La mayor afluencia de buques se concentra entre las **18:00 y 21:00**. 
+    > Se recomienda reforzar la disponibilidad de personal en el turno de tarde/noche.
     """)
+else:
+    st.info("ℹ️ Datos insuficientes para este análisis.")
 
 st.divider()
 
@@ -235,44 +247,51 @@ if "Condicion_Climatica" in df_filtrado.columns and not df_filtrado.empty:
     fig4 = px.bar(
         g4, x="Condicion_Climatica", y="Tiempo_Espera_Horas",
         color="Condicion_Climatica", color_discrete_map=COLORES_CLIMA,
-        labels={"Tiempo_Espera_Horas": "Horas Promedio"}, text_auto=".2f"
+        labels={"Tiempo_Espera_Horas": "Horas Promedio de Espera"},
+        text_auto=".2f"
     )
     fig4.update_layout(showlegend=False)
     st.plotly_chart(fig4, use_container_width=True)
     
     st.markdown("""
-    > **Análisis:** Tormenta y viento fuerte duplican los tiempos de espera. 
-    > Integrar pronósticos meteorológicos en la planificación es clave.
+    > **Análisis:** Las condiciones de **tormenta y viento fuerte** incrementan notablemente 
+    > los tiempos de espera respecto a días despejados. Integrar pronósticos meteorológicos 
+    > en la planificación operativa diaria es una recomendación prioritaria.
     """)
+else:
+    st.info("ℹ️ Datos insuficientes para este análisis.")
 
 st.divider()
 
 # --------------------------
 # CONCLUSIONES
 # --------------------------
-st.subheader("📝 Conclusiones y Recomendaciones")
+st.subheader("📝 Conclusiones y Recomendaciones Estratégicas")
 
 if not df_filtrado.empty:
     st.markdown("""
     ### Hallazgos Relevantes:
-    1. **Carga crítica:** Granel líquido y granel sólido presentan los mayores tiempos de espera.
-       Requieren revisión de protocolos de atraque.
-    2. **Concentración horaria:** Mayor llegada de buques en horario de tarde/noche.
-       Redistribuir recursos en estos turnos reducirá colas.
-    3. **Impacto climático:** Condiciones adversas aumentan los tiempos de espera de forma notable.
-    4. **Umbral de control:** Las 3.0 horas se confirman como meta válida para activar contingencias.
+    1. **Carga crítica:** El granel líquido y el granel sólido presentan los mayores tiempos de espera.
+       Requieren revisión de los protocolos de atraque y asignación de recursos.
+    2. **Concentración horaria:** El mayor volumen de llegadas se presenta en horario de tarde/noche.
+       Redistribuir recursos en estos turnos reducirá significativamente las colas.
+    3. **Impacto climático:** Las condiciones adversas aumentan los tiempos de espera de forma notable.
+    4. **Umbral de control:** Las 3.0 horas se confirman como meta válida para activar protocolos de contingencia.
     
     ### Recomendaciones Estratégicas:
-    - 📊 Incorporar pronósticos meteorológicos en la programación semanal
-    - 👥 Reforzar dotación entre las 18:00 y 21:00
-    - ⚓ Establecer protocolo prioritario para granel líquido
+    - 📊 Incorporar pronósticos meteorológicos en la programación semanal de operaciones
+    - 👥 Reforzar la dotación de personal y equipos entre las 18:00 y 21:00
+    - ⚓ Establecer un protocolo de atención prioritaria para granel líquido
     - 🚨 Implementar alertas automáticas al superar las 3 horas de espera
     """)
     
     st.success("""
     ✅ **Conclusión General:** PortAnalytics demuestra ser una herramienta funcional 
-    de apoyo a la toma de decisiones. Se recomienda su expansión con datos en tiempo real.
+    de apoyo a la toma de decisiones en la gestión portuaria. Se recomienda su expansión 
+    con integración de datos en tiempo real y modelos predictivos.
     """)
+else:
+    st.warning("⚠️ No hay registros seleccionados para emitir conclusiones.")
 
 st.divider()
 
