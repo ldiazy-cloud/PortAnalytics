@@ -1,298 +1,700 @@
+
 # ============================================================
-# PortAnalytics — Sistema de Análisis de Operaciones Portuarias
-# Asignatura: Ciencia de Datos I
-# Autor: Estudiante de Ingeniería de Software — 5to Semestre
-# Fecha: 2026
+# PORTANALYTICS - DASHBOARD DE ANALITICA LOGISTICA PORTUARIA
 # ============================================================
 
-import streamlit as st
+from pathlib import Path
+
 import pandas as pd
+import streamlit as st
 import plotly.express as px
 
-# --------------------------
-# CONFIGURACIÓN GLOBAL
-# --------------------------
+
+# ============================================================
+# 1. CONFIGURACION GENERAL
+# ============================================================
+
 st.set_page_config(
-    page_title="PortAnalytics | Análisis Portuario",
+    page_title="PortAnalytics",
     page_icon="⚓",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# --------------------------
-# CARGA DE DATOS
-# --------------------------
-@st.cache_data(show_spinner="Cargando conjunto de datos...")
-def cargar_datos():
-    df = pd.read_csv("datos_logisticos_limpios.csv")
-    
-    if "Fecha_Llegada" in df.columns:
-        df["Fecha_Llegada"] = pd.to_datetime(df["Fecha_Llegada"], errors="coerce")
-    if "Hora_Llegada" in df.columns:
-        df["Hora_Llegada"] = pd.to_datetime(df["Hora_Llegada"], errors="coerce")
-        df["Hora_del_Dia"] = df["Hora_Llegada"].dt.hour
-    
+UMBRAL_CONTROL = 3.0
+ARCHIVO_CSV = (
+    Path(__file__).resolve().parent
+    / "datos_logisticos_limpios.csv"
+)
+
+
+# ============================================================
+# 2. CARGA Y VALIDACION DE LOS DATOS
+# ============================================================
+
+@st.cache_data(show_spinner="Cargando datos...")
+def cargar_datos(ruta_archivo):
+
+    df = pd.read_csv(ruta_archivo)
+
+    columnas_requeridas = [
+        "ID_Registro",
+        "Buque",
+        "Tipo_Carga",
+        "Hora_Llegada",
+        "Tiempo_Espera_Horas",
+        "Tiempo_Muelle_Horas",
+        "TEUs_Ocupados",
+        "Condicion_Climatica"
+    ]
+
+    faltantes = [
+        columna
+        for columna in columnas_requeridas
+        if columna not in df.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            "Faltan columnas en el CSV: "
+            + ", ".join(faltantes)
+        )
+
+    # Convertir la llegada a fecha y hora.
+    df["Hora_Llegada"] = pd.to_datetime(
+        df["Hora_Llegada"],
+        errors="coerce"
+    )
+
+    # Convertir los indicadores a valores numericos.
+    columnas_numericas = [
+        "Tiempo_Espera_Horas",
+        "Tiempo_Muelle_Horas",
+        "TEUs_Ocupados"
+    ]
+
+    for columna in columnas_numericas:
+        df[columna] = pd.to_numeric(
+            df[columna],
+            errors="coerce"
+        )
+
+    # Limpiar los espacios de los campos de texto.
+    columnas_texto = [
+        "ID_Registro",
+        "Buque",
+        "Tipo_Carga",
+        "Condicion_Climatica"
+    ]
+
+    for columna in columnas_texto:
+        df[columna] = (
+            df[columna]
+            .fillna("Sin dato")
+            .astype(str)
+            .str.strip()
+            .replace("", "Sin dato")
+        )
+
+    # La hora permite estudiar las llegadas por horario.
+    df["Hora_del_Dia"] = (
+        df["Hora_Llegada"].dt.hour
+    )
+
     return df
 
-df = cargar_datos()
 
-# --------------------------
-# CONSTANTES
-# --------------------------
-UMBRAL_CONTROL = 3.0
-COLORES_CARGA = {
-    "Granel Líquido": "#B91C1C",
-    "Granel Sólido": "#0D9488",
-    "Contenedores": "#D97706",
-    "Carga General": "#2563EB",
-    "Sin especificar": "#6B7280"
-}
-COLORES_CLIMA = {
-    "Despejado": "#EAB308",
-    "Lluvia Ligera": "#3B82F6",
-    "Tormenta": "#DC2626",
-    "Viento Fuerte": "#8B5CF6"
-}
+# ============================================================
+# 3. TITULO Y DESCRIPCION
+# ============================================================
 
-# --------------------------
-# FILTROS
-# --------------------------
-with st.sidebar:
-    st.header("🔍 Panel de Filtros")
-    st.markdown("---")
-    
-    df_filtrado = df.copy()
-    
-    if "Tipo_Carga" in df.columns:
-        lista_cargas = sorted(df["Tipo_Carga"].dropna().unique().tolist())
-        filtro_carga = st.multiselect(
-            "**Tipo de Carga**",
-            options=lista_cargas,
-            default=lista_cargas
-        )
-        df_filtrado = df_filtrado[df_filtrado["Tipo_Carga"].isin(filtro_carga)]
-    
-    if "Buque" in df.columns:
-        lista_buques = sorted(df["Buque"].dropna().unique().tolist())
-        filtro_buque = st.multiselect(
-            "**Buque**",
-            options=lista_buques,
-            default=lista_buques
-        )
-        df_filtrado = df_filtrado[df_filtrado["Buque"].isin(filtro_buque)]
-    
-    if "Condicion_Climatica" in df.columns:
-        lista_clima = sorted(df["Condicion_Climatica"].dropna().unique().tolist())
-        filtro_clima = st.multiselect(
-            "**Condición Climática**",
-            options=lista_clima,
-            default=lista_clima
-        )
-        df_filtrado = df_filtrado[df_filtrado["Condicion_Climatica"].isin(filtro_clima)]
-    
-    st.markdown("---")
-    total = len(df)
-    mostrados = len(df_filtrado)
-    st.info(f"📋 {mostrados} de {total} registros mostrados")
+st.title("⚓ PortAnalytics")
+st.subheader(
+    "Dashboard de analitica logistica portuaria"
+)
 
-# --------------------------
-# CABECERA
-# --------------------------
-st.title("⚓ PortAnalytics — Sistema de Análisis Logístico Portuario")
-st.markdown("""
-> **Puerto de Cartagena de Indias** · Monitoreo de Tiempos de Operación y Desempeño
+st.markdown(
+    """
+    Herramienta para explorar las operaciones portuarias,
+    analizar tiempos de espera, revisar el tiempo en muelle
+    e identificar posibles demoras.
+    """
+)
 
-Este tablero presenta el procesamiento y análisis de datos históricos de operación portuaria, 
-con el propósito de identificar cuellos de botella, evaluar el impacto del tipo de carga y 
-condiciones climáticas, y proponer mejoras en los tiempos de espera y atraque.
-
-*Proyecto — Ciencia de Datos I · Ingeniería de Software*
-""")
 st.divider()
 
-# --------------------------
-# KPIs
-# --------------------------
-st.subheader("📊 Indicadores Clave de Desempeño")
+
+# ============================================================
+# 4. CARGAR ARCHIVO
+# ============================================================
+
+try:
+    df = cargar_datos(ARCHIVO_CSV)
+
+except FileNotFoundError:
+    st.error(
+        "No se encontro el archivo "
+        "'datos_logisticos_limpios.csv'. "
+        "Verifica que este en la misma carpeta que app.py."
+    )
+    st.stop()
+
+except Exception as error:
+    st.error(
+        f"No fue posible cargar los datos: {error}"
+    )
+    st.stop()
+
+
+# ============================================================
+# 5. FILTROS LATERALES
+# ============================================================
+
+st.sidebar.header("Filtros de operaciones")
+
+tipos_carga = sorted(
+    df["Tipo_Carga"].dropna().unique().tolist()
+)
+
+buques = sorted(
+    df["Buque"].dropna().unique().tolist()
+)
+
+climas = sorted(
+    df["Condicion_Climatica"].dropna().unique().tolist()
+)
+
+cargas_seleccionadas = st.sidebar.multiselect(
+    "Tipo de carga",
+    options=tipos_carga,
+    default=tipos_carga
+)
+
+buques_seleccionados = st.sidebar.multiselect(
+    "Buque",
+    options=buques,
+    default=buques
+)
+
+climas_seleccionados = st.sidebar.multiselect(
+    "Condicion climatica",
+    options=climas,
+    default=climas
+)
+
+n_muelles = st.sidebar.number_input(
+    "Numero supuesto de muelles",
+    min_value=1,
+    max_value=100,
+    value=5,
+    step=1
+)
+
+st.sidebar.caption(
+    "La ocupacion es estimada y depende del numero "
+    "de muelles indicado."
+)
+
+if st.sidebar.button(
+    "Restablecer filtros",
+    use_container_width=True
+):
+    st.cache_data.clear()
+    st.rerun()
+
+
+# ============================================================
+# 6. APLICAR FILTROS
+# ============================================================
+
+df_filtrado = df[
+    df["Tipo_Carga"].isin(cargas_seleccionadas)
+    & df["Buque"].isin(buques_seleccionados)
+    & df["Condicion_Climatica"].isin(
+        climas_seleccionados
+    )
+].copy()
+
+st.caption(
+    f"Registros seleccionados: {len(df_filtrado)} "
+    f"de {len(df)}"
+)
+
+
+# ============================================================
+# 7. CALCULO DE LOS SEIS INDICADORES
+# ============================================================
 
 if not df_filtrado.empty:
-    espera_prom = round(df_filtrado["Tiempo_Espera_Horas"].mean(), 2)
-    muelle_prom = round(df_filtrado["Tiempo_Muelle_Horas"].mean(), 1)
-    teus_total = int(df_filtrado["TEUs_Ocupados"].sum())
-    cant_demoras = len(df_filtrado[df_filtrado["Tiempo_Espera_Horas"] > UMBRAL_CONTROL])
-else:
-    espera_prom = muelle_prom = teus_total = cant_demoras = 0
 
-c1, c2, c3, c4 = st.columns(4)
+    # Indicador 1: tiempo promedio de espera.
+    espera_prom = (
+        df_filtrado["Tiempo_Espera_Horas"].mean()
+    )
+
+    # Indicador 2: tiempo promedio en muelle.
+    muelle_prom = (
+        df_filtrado["Tiempo_Muelle_Horas"].mean()
+    )
+
+    # Indicador 3: total de TEUs registrados.
+    teus_total = (
+        df_filtrado["TEUs_Ocupados"].sum()
+    )
+
+    # Indicador 4: operaciones con espera superior
+    # al umbral de control.
+    cant_demoras = int(
+        (
+            df_filtrado["Tiempo_Espera_Horas"]
+            > UMBRAL_CONTROL
+        ).sum()
+    )
+
+    # Indicador 5: ocupacion estimada de los muelles.
+    # Se usa el periodo completo del archivo y el
+    # numero de muelles indicado en el filtro lateral.
+    llegadas_validas = (
+        df["Hora_Llegada"].dropna()
+    )
+
+    if (
+        len(llegadas_validas) >= 2
+        and n_muelles > 0
+    ):
+
+        horas_periodo = (
+            llegadas_validas.max()
+            - llegadas_validas.min()
+        ).total_seconds() / 3600
+
+        horas_muelle_filtradas = (
+            df_filtrado["Tiempo_Muelle_Horas"]
+            .clip(lower=0)
+            .sum()
+        )
+
+        horas_disponibles = (
+            n_muelles * horas_periodo
+        )
+
+        if horas_disponibles > 0:
+            ocupacion = (
+                horas_muelle_filtradas
+                / horas_disponibles
+            ) * 100
+        else:
+            ocupacion = None
+
+    else:
+        ocupacion = None
+
+    # Indicador 6: rendimiento aproximado de
+    # las operaciones de contenedores.
+    contenedores = df_filtrado[
+        df_filtrado["Tipo_Carga"] == "Contenedores"
+    ]
+
+    horas_contenedores = (
+        contenedores["Tiempo_Muelle_Horas"]
+        .clip(lower=0)
+        .sum()
+    )
+
+    teus_contenedores = (
+        contenedores["TEUs_Ocupados"].sum()
+    )
+
+    if horas_contenedores > 0:
+        eficiencia = (
+            teus_contenedores
+            / horas_contenedores
+        )
+    else:
+        eficiencia = None
+
+else:
+    espera_prom = None
+    muelle_prom = None
+    teus_total = 0
+    cant_demoras = 0
+    ocupacion = None
+    eficiencia = None
+
+
+# ============================================================
+# 8. PRESENTACION DE LOS SEIS INDICADORES
+# ============================================================
+
+st.subheader("Indicadores clave de desempeño")
+
+c1, c2, c3 = st.columns(3)
 
 with c1:
-    st.metric("Tiempo de Espera Promedio", f"{espera_prom} h", f"Meta: < {UMBRAL_CONTROL} h")
-    if espera_prom <= UMBRAL_CONTROL:
-        st.success("✅ Dentro del estándar")
-    else:
-        st.warning("⚠️ Fuera de rango")
+    st.metric(
+        "Tiempo de espera promedio",
+        (
+            f"{espera_prom:.1f} h"
+            if pd.notna(espera_prom)
+            else "N/D"
+        )
+    )
 
 with c2:
-    st.metric("Estancia en Muelle", f"{muelle_prom} h")
-    st.caption("Incluye maniobras de carga y descarga")
+    st.metric(
+        "Estancia promedio en muelle",
+        (
+            f"{muelle_prom:.1f} h"
+            if pd.notna(muelle_prom)
+            else "N/D"
+        )
+    )
 
 with c3:
-    st.metric("TEUs Movilizados", f"{teus_total:,}")
+    st.metric(
+        "TEUs registrados",
+        f"{teus_total:,.0f}"
+    )
+
+c4, c5, c6 = st.columns(3)
 
 with c4:
-    st.metric("Casos con Demora", f"{cant_demoras}")
+    st.metric(
+        "Casos con demora",
+        cant_demoras
+    )
 
-st.divider()
+with c5:
+    st.metric(
+        "Ocupacion estimada de muelles",
+        (
+            f"{ocupacion:.1f}%"
+            if ocupacion is not None
+            else "N/D"
+        )
+    )
 
-# --------------------------
-# DEMORAS
-# --------------------------
-st.subheader("⚠️ Seguimiento de Operaciones con Demora")
+with c6:
+    st.metric(
+        "Rendimiento de contenedores",
+        (
+            f"{eficiencia:.1f} TEUs/h"
+            if eficiencia is not None
+            else "N/D"
+        )
+    )
 
-if cant_demoras > 0:
-    st.warning(f"Se detectaron **{cant_demoras}** operaciones que superaron {UMBRAL_CONTROL} horas de espera.")
-    tabla = df_filtrado[
-        df_filtrado["Tiempo_Espera_Horas"] > UMBRAL_CONTROL
-    ].sort_values("Tiempo_Espera_Horas", ascending=False)[
-        ["ID_Registro", "Buque", "Tipo_Carga", "Tiempo_Espera_Horas", "Condicion_Climatica"]
+st.caption(
+    "Nota: la ocupacion es una estimacion basada en "
+    "el numero supuesto de muelles y el periodo del "
+    "archivo. El rendimiento expresa TEUs registrados "
+    "por hora de permanencia en muelle."
+)
+
+
+# ============================================================
+# 9. ALERTAS DE DEMORAS
+# ============================================================
+
+st.subheader("Alertas de operaciones")
+
+if df_filtrado.empty:
+
+    st.info(
+        "No hay operaciones para los filtros seleccionados."
+    )
+
+elif cant_demoras == 0:
+
+    st.success(
+        "No se encontraron operaciones con espera "
+        f"superior a {UMBRAL_CONTROL:.1f} horas."
+    )
+
+else:
+
+    st.warning(
+        f"Se encontraron {cant_demoras} operaciones "
+        f"con espera superior a "
+        f"{UMBRAL_CONTROL:.1f} horas."
+    )
+
+    tabla_demoras = df_filtrado[
+        df_filtrado["Tiempo_Espera_Horas"]
+        > UMBRAL_CONTROL
+    ].copy()
+
+    tabla_demoras = tabla_demoras.sort_values(
+        "Tiempo_Espera_Horas",
+        ascending=False
+    )
+
+    columnas_alerta = [
+        "ID_Registro",
+        "Buque",
+        "Tipo_Carga",
+        "Tiempo_Espera_Horas",
+        "Condicion_Climatica"
     ]
-    st.dataframe(tabla, use_container_width=True, hide_index=True)
-else:
-    st.success("✅ Ningún registro supera el umbral establecido. Desempeño dentro de lo esperado.")
 
-st.divider()
-
-# --------------------------
-# GRÁFICA 1: ESPERA POR CARGA
-# --------------------------
-st.subheader("1. Tiempo de Espera por Tipo de Carga")
-
-if "Tipo_Carga" in df_filtrado.columns and not df_filtrado.empty:
-    g1 = df_filtrado.groupby("Tipo_Carga")["Tiempo_Espera_Horas"].mean().reset_index()
-    g1 = g1.sort_values("Tiempo_Espera_Horas", ascending=False)
-    
-    fig1 = px.bar(
-        g1, x="Tipo_Carga", y="Tiempo_Espera_Horas",
-        color="Tipo_Carga", color_discrete_map=COLORES_CARGA,
-        labels={"Tiempo_Espera_Horas": "Horas Promedio de Espera"},
-        text_auto=".2f"
+    st.dataframe(
+        tabla_demoras[columnas_alerta],
+        width="stretch",
+        hide_index=True
     )
-    fig1.update_layout(showlegend=False)
-    st.plotly_chart(fig1, use_container_width=True)
-    
-    st.markdown("""
-    > **Análisis:** La categoría de **granel líquido** registra los mayores tiempos de espera, 
-    > seguida por granel sólido. Estas constituyen el foco principal de optimización.
-    """)
-else:
-    st.info("ℹ️ Datos insuficientes para este análisis.")
+
+
+# ============================================================
+# 10. GRAFICO: ESPERA PROMEDIO POR TIPO DE CARGA
+# ============================================================
 
 st.divider()
-
-# --------------------------
-# GRÁFICA 2: DISTRIBUCIÓN CIRCULAR
-# --------------------------
-st.subheader("2. Distribución del Volumen Movilizado")
-
-if "Tipo_Carga" in df_filtrado.columns and "TEUs_Ocupados" in df_filtrado.columns and not df_filtrado.empty:
-    g2 = df_filtrado.groupby("Tipo_Carga")["TEUs_Ocupados"].sum().reset_index()
-    
-    fig2 = px.pie(
-        g2, values="TEUs_Ocupados", names="Tipo_Carga",
-        color="Tipo_Carga", color_discrete_map=COLORES_CARGA,
-        title="Participación Porcentual por Tipo de Carga",
-        hole=0.3
-    )
-    fig2.update_traces(textposition="inside", textinfo="percent+label")
-    st.plotly_chart(fig2, use_container_width=True)
-else:
-    st.info("ℹ️ Datos insuficientes para este análisis.")
-
-st.divider()
-
-# --------------------------
-# GRÁFICA 3: HORARIOS PICO
-# --------------------------
-st.subheader("3. Patrón de Llegadas y Horarios Pico")
-
-if "Hora_del_Dia" in df_filtrado.columns and not df_filtrado.empty:
-    g3 = df_filtrado.groupby("Hora_del_Dia").size().reset_index(name="Cantidad_Buques")
-    
-    fig3 = px.line(
-        g3, x="Hora_del_Dia", y="Cantidad_Buques", markers=True,
-        labels={"Cantidad_Buques": "Número de Buques", "Hora_del_Dia": "Hora del Día (0-23)"},
-        color_discrete_sequence=["#0D9488"]
-    )
-    fig3.update_layout(xaxis=dict(tickmode="linear", dtick=2))
-    st.plotly_chart(fig3, use_container_width=True)
-    
-    st.markdown("""
-    > **Análisis:** La mayor afluencia de buques se concentra entre las **18:00 y 21:00**. 
-    > Se recomienda reforzar la disponibilidad de personal en el turno de tarde/noche.
-    """)
-else:
-    st.info("ℹ️ Datos insuficientes para este análisis.")
-
-st.divider()
-
-# --------------------------
-# GRÁFICA 4: IMPACTO CLIMÁTICO
-# --------------------------
-st.subheader("4. Influencia de las Condiciones Climáticas")
-
-if "Condicion_Climatica" in df_filtrado.columns and not df_filtrado.empty:
-    g4 = df_filtrado.groupby("Condicion_Climatica")["Tiempo_Espera_Horas"].mean().reset_index()
-    g4 = g4.sort_values("Tiempo_Espera_Horas", ascending=False)
-    
-    fig4 = px.bar(
-        g4, x="Condicion_Climatica", y="Tiempo_Espera_Horas",
-        color="Condicion_Climatica", color_discrete_map=COLORES_CLIMA,
-        labels={"Tiempo_Espera_Horas": "Horas Promedio de Espera"},
-        text_auto=".2f"
-    )
-    fig4.update_layout(showlegend=False)
-    st.plotly_chart(fig4, use_container_width=True)
-    
-    st.markdown("""
-    > **Análisis:** Las condiciones de **tormenta y viento fuerte** incrementan notablemente 
-    > los tiempos de espera respecto a días despejados. Integrar pronósticos meteorológicos 
-    > en la planificación operativa diaria es una recomendación prioritaria.
-    """)
-else:
-    st.info("ℹ️ Datos insuficientes para este análisis.")
-
-st.divider()
-
-# --------------------------
-# CONCLUSIONES
-# --------------------------
-st.subheader("📝 Conclusiones y Recomendaciones Estratégicas")
+st.subheader("Analisis por tipo de carga")
 
 if not df_filtrado.empty:
-    st.markdown("""
-    ### Hallazgos Relevantes:
-    1. **Carga crítica:** El granel líquido y el granel sólido presentan los mayores tiempos de espera.
-       Requieren revisión de los protocolos de atraque y asignación de recursos.
-    2. **Concentración horaria:** El mayor volumen de llegadas se presenta en horario de tarde/noche.
-       Redistribuir recursos en estos turnos reducirá significativamente las colas.
-    3. **Impacto climático:** Las condiciones adversas aumentan los tiempos de espera de forma notable.
-    4. **Umbral de control:** Las 3.0 horas se confirman como meta válida para activar protocolos de contingencia.
-    
-    ### Recomendaciones Estratégicas:
-    - 📊 Incorporar pronósticos meteorológicos en la programación semanal de operaciones
-    - 👥 Reforzar la dotación de personal y equipos entre las 18:00 y 21:00
-    - ⚓ Establecer un protocolo de atención prioritaria para granel líquido
-    - 🚨 Implementar alertas automáticas al superar las 3 horas de espera
-    """)
-    
-    st.success("""
-    ✅ **Conclusión General:** PortAnalytics demuestra ser una herramienta funcional 
-    de apoyo a la toma de decisiones en la gestión portuaria. Se recomienda su expansión 
-    con integración de datos en tiempo real y modelos predictivos.
-    """)
+
+    espera_por_carga = (
+        df_filtrado
+        .groupby("Tipo_Carga", as_index=False)
+        ["Tiempo_Espera_Horas"]
+        .mean()
+        .sort_values(
+            "Tiempo_Espera_Horas",
+            ascending=False
+        )
+    )
+
+    figura_carga = px.bar(
+        espera_por_carga,
+        x="Tipo_Carga",
+        y="Tiempo_Espera_Horas",
+        title="Tiempo promedio de espera por tipo de carga",
+        labels={
+            "Tipo_Carga": "Tipo de carga",
+            "Tiempo_Espera_Horas": "Espera promedio (horas)"
+        },
+        text_auto=".2f"
+    )
+
+    figura_carga.update_layout(
+        xaxis_title="Tipo de carga",
+        yaxis_title="Horas de espera",
+        xaxis_tickangle=-20
+    )
+
+    st.plotly_chart(
+        figura_carga,
+        width="stretch"
+    )
+
 else:
-    st.warning("⚠️ No hay registros seleccionados para emitir conclusiones.")
+    st.info(
+        "No hay datos para mostrar este grafico."
+    )
+
+
+# ============================================================
+# 11. GRAFICO: CANTIDAD DE OPERACIONES POR CARGA
+# ============================================================
+
+st.subheader("Distribucion de las operaciones")
+
+if not df_filtrado.empty:
+
+    operaciones_por_carga = (
+        df_filtrado["Tipo_Carga"]
+        .value_counts()
+        .rename_axis("Tipo_Carga")
+        .reset_index(name="Cantidad")
+    )
+
+    figura_distribucion = px.pie(
+        operaciones_por_carga,
+        names="Tipo_Carga",
+        values="Cantidad",
+        title="Cantidad de operaciones por tipo de carga",
+        hole=0.35
+    )
+
+    figura_distribucion.update_traces(
+        textposition="inside",
+        textinfo="percent+label"
+    )
+
+    st.plotly_chart(
+        figura_distribucion,
+        width="stretch"
+    )
+
+else:
+    st.info(
+        "No hay datos para mostrar este grafico."
+    )
+
+
+# ============================================================
+# 12. GRAFICO: LLEGADAS POR HORA DEL DIA
+# ============================================================
 
 st.divider()
+st.subheader("Patrones de llegada de los buques")
 
-st.caption("PortAnalytics v1.0 · Ciencia de Datos I · Universidad de Cartagena · 2026")
+llegadas = df_filtrado.dropna(
+    subset=["Hora_Llegada"]
+).copy()
+
+if not llegadas.empty:
+
+    llegadas["Hora_del_Dia"] = (
+        llegadas["Hora_Llegada"].dt.hour
+    )
+
+    llegadas_por_hora = (
+        llegadas
+        .groupby("Hora_del_Dia")
+        .size()
+        .reindex(range(24), fill_value=0)
+        .rename("Cantidad")
+        .reset_index()
+    )
+
+    figura_horas = px.line(
+        llegadas_por_hora,
+        x="Hora_del_Dia",
+        y="Cantidad",
+        markers=True,
+        title="Cantidad de llegadas por hora del dia",
+        labels={
+            "Hora_del_Dia": "Hora del dia",
+            "Cantidad": "Numero de llegadas"
+        }
+    )
+
+    figura_horas.update_xaxes(
+        tickmode="linear",
+        dtick=1
+    )
+
+    st.plotly_chart(
+        figura_horas,
+        width="stretch"
+    )
+
+else:
+    st.info(
+        "No hay horas de llegada validas para mostrar."
+    )
+
+
+# ============================================================
+# 13. GRAFICO: ESPERA PROMEDIO POR CLIMA
+# ============================================================
+
+st.subheader("Influencia observada de las condiciones climaticas")
+
+if not df_filtrado.empty:
+
+    espera_por_clima = (
+        df_filtrado
+        .groupby("Condicion_Climatica", as_index=False)
+        ["Tiempo_Espera_Horas"]
+        .mean()
+        .sort_values(
+            "Tiempo_Espera_Horas",
+            ascending=False
+        )
+    )
+
+    figura_clima = px.bar(
+        espera_por_clima,
+        x="Condicion_Climatica",
+        y="Tiempo_Espera_Horas",
+        title="Tiempo promedio de espera por condicion climatica",
+        labels={
+            "Condicion_Climatica": "Condicion climatica",
+            "Tiempo_Espera_Horas": "Espera promedio (horas)"
+        },
+        text_auto=".2f"
+    )
+
+    figura_clima.update_layout(
+        xaxis_tickangle=-20
+    )
+
+    st.plotly_chart(
+        figura_clima,
+        width="stretch"
+    )
+
+else:
+    st.info(
+        "No hay datos para mostrar este grafico."
+    )
+
+
+# ============================================================
+# 14. CONCLUSIONES AUTOMATICAS
+# ============================================================
+
+st.divider()
+st.subheader("Resumen del analisis")
+
+if df_filtrado.empty:
+
+    st.info(
+        "Selecciona operaciones en los filtros para "
+        "generar el resumen."
+    )
+
+else:
+
+    st.write(
+        f"Se analizaron **{len(df_filtrado)} operaciones** "
+        "con los filtros actuales."
+    )
+
+    if pd.notna(espera_prom):
+
+        st.write(
+            f"El tiempo promedio de espera es de "
+            f"**{espera_prom:.2f} horas**."
+        )
+
+    if pd.notna(muelle_prom):
+
+        st.write(
+            f"El tiempo promedio de permanencia en muelle "
+            f"es de **{muelle_prom:.2f} horas**."
+        )
+
+    st.write(
+        f"Se identificaron **{cant_demoras} operaciones** "
+        f"con espera superior a {UMBRAL_CONTROL:.1f} horas."
+    )
+
+    if cant_demoras > 0:
+
+        st.write(
+            "Se recomienda revisar estas operaciones para "
+            "identificar posibles causas de espera prolongada."
+        )
+
+    if ocupacion is not None:
+
+        st.write(
+            f"La ocupacion estimada bajo el supuesto de "
+            f"{n_muelles} muelles es de **{ocupacion:.1f}%**. "
+            "Este resultado no representa una medicion real "
+            "de ocupacion simultanea."
+        )
+
+    if eficiencia is not None:
+
+        st.write(
+            f"El rendimiento calculado para las operaciones "
+            f"de contenedores es de **{eficiencia:.1f} TEUs "
+            "por hora de permanencia en muelle**."
+        )
+
+st.caption(
+    "PortAnalytics | Proyecto academico de Ciencias de Datos I"
+)
