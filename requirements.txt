@@ -1,3 +1,4 @@
 streamlit
 pandas
 plotly
+https://portanalytics-mvmv6qkr9iyyw6twmo32x5.streamlit.app/ 
